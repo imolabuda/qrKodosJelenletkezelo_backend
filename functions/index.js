@@ -11,9 +11,6 @@ admin.initializeApp();
 //   response.send("Hello world!");
 // });
 
-//kerdes: honnan tudom azt, hogy pontosan milyen endpointokat kell megirjak? az osszeset meg kell irjam, amire szuksegem lehet ahhoz, 
-//hogy minden fontos informaciot le tudjak kerni a projekt megfelelo mukodesehez, de nem kellene pluszba irni
-
 ///////////////////////////////////////////////////////GET TABLES///////////////////////////////////////////////////////
 
 //GET attendences
@@ -215,3 +212,6 @@ exports.createTeacher = functions.https.onRequest((req, res) =>{
     });
 
 });
+
+//CREATE qrCode
+//keresbol ki tudom venni, hogy melyik ora
