@@ -10,5 +10,14 @@
         "firebase-debug.*.log"
       ]
     }
-  ]
+  ],
+  "emulators": {
+    "functions": {
+      "port": 5000
+    },
+    "ui": {
+      "enabled": false
+    },
+    "singleProjectMode": true
+  }
 }
