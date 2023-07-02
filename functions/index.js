@@ -4,10 +4,7 @@ const admin = require('firebase-admin');
 const cors = require('cors')({origin: true});
 const crypto = require('crypto');
 
-
 const {onRequest} = require("firebase-functions/v2/https");
-
-
 
 admin.initializeApp();
 
@@ -23,7 +20,31 @@ const db = admin.firestore();
 
 //GET nextQRCode
   exports.getNextQrCode = functions.https.onCall(async (data, context) => {
-    const documentId = data.email; // A lekérdezni kívánt dokumentum azonosítója
+    const documentId = data.email;
+    const token = data.token;
+    const webLat = data.webLatitude;
+    const webLong = data.webLongitude;
+
+    // console.log("webLong: "+ webLong);
+    let valid = "";
+    if (token != ""){
+      valid = await checkValidToken(token)
+      .then((result) => {
+        console.log(result);
+        return result;
+      })
+      .catch((error) => {
+       console.error(error);
+       throw new Error('An error occurred while retrieving the document.');
+      });
+      console.log(valid);
+      if (valid == "valid"){
+        return token;
+      }
+    }else{
+      console.log("ures a token");
+    }
+
     let teacherID = "";
     let courseID = "";
     let classID = "";
@@ -31,17 +52,14 @@ const db = admin.firestore();
     
     teacherID = await getTeacherIDByEmail(documentId)
       .then((result) => {
-      // Az `onCall` függvény válasza
       console.log(result);
-       // ... Kezeld a visszatérített dokumentum adatokat
       return result;
     })
     .catch((error) => {
-      // Hiba kezelése
      console.error(error);
      throw new Error('An error occurred while retrieving the document.');
-    // ... Kezeld a hibát
     });
+
     courseID = await getCourseIDByTeacherID(teacherID)
       .then((result) => {
         console.log(result);
@@ -63,14 +81,28 @@ const db = admin.firestore();
       });
 
     randomToken = generateRandomString(10);  
-    await createQrCodeByClassID(classID, randomToken);
+    await createQrCodeByClassID(classID, randomToken, webLat, webLong);
     return randomToken;
   });
 
+async function checkValidToken(token){
+  try{
+    let valid="not valid";
+    const doc = await admin.firestore().collection('QrCodes').get();
+    doc.forEach(document => {
+      if (document.data().qrCode == token) {
+        valid = "valid";      
+      }
+    });
+    return valid;
+  } catch (error){
+    console.error(error);
+    throw new Error('An error occurred while retrieving the document.');
+  }
+}
+
 async function getTeacherIDByEmail(email) {
-  const documentId = email; // A lekérdezni kívánt dokumentum azonosítója
-  console.log('getTIBE return elott'+documentId);
-    // Firestore lekérdezés
+  const documentId = email; 
     try {
     const doc = await admin.firestore().collection('Teachers').get();
     let teacherID;
@@ -80,19 +112,15 @@ async function getTeacherIDByEmail(email) {
         console.log(document.id, '=>', document.data());
       }
     });
-    console.log('getTIBE return elott'+teacherID);
     return teacherID;
   } catch (error) {
-    // Hiba kezelése
     console.error(error);
     throw new Error('An error occurred while retrieving the document.');
   }
 }
 
 async function getCourseIDByTeacherID(teacherId) {
-  const documentId = teacherId; // A lekérdezni kívánt dokumentum azonosítója
-  console.log('getCIBT'+documentId);
-    // Firestore lekérdezés
+  const documentId = teacherId; 
     try {
     const doc = await admin.firestore().collection('Courses').get();
     let courseID;
@@ -102,33 +130,24 @@ async function getCourseIDByTeacherID(teacherId) {
         console.log(document.id, '=>', document.data());
       }
     });
-    console.log('getCIBT return elott'+courseID);
     return courseID;
   } catch (error) {
-    // Hiba kezelése
     console.error(error);
     throw new Error('An error occurred while retrieving the document.');
   }
 }
 
 async function getClassIDByCourseID(courseId) {
-  const documentId = courseId; // A lekérdezni kívánt dokumentum azonosítója
-  console.log('getCIBCI'+documentId);
-    // Firestore lekérdezés
+  const documentId = courseId; 
+
     try {
     const doc = await admin.firestore().collection('Classes').get();
     let classID;
     let todayNow = new Date().getTime();
-    //let currentDay = todayNow.getDay();
-    //let currentTime = todayNow.getHours();
-    let currentTime = todayNow; //.getTime()
+    let currentTime = todayNow;
+
     doc.forEach(document => {
       if (document.data().courseID === documentId){
-        console.log("ido a tablabol " + document.data().time);
-        console.log("atalakitott " + document.data().time.toDate());
-        console.log("document.data().time.toDate().getTime() " + document.data().time.toDate().getTime());
-        console.log("currentTime (new Date().getTime()): " + currentTime);
-        console.log("document.data().time.toDate().getTime() + 7200: " + document.data().time.toDate().getTime() + 7200);
         let lower_limit = document.data().time.toDate().getTime();
         let upper_limit = document.data().time.toDate().getTime() + (2*60*60*1000);
         
@@ -139,19 +158,19 @@ async function getClassIDByCourseID(courseId) {
         }
       }
     });
-    console.log('getCIBCI return elott'+classID);
     return classID;
   } catch (error) {
-    // Hiba kezelése
     console.error(error);
     throw new Error('An error occurred while retrieving the document.');
   }
 }
 
-async function createQrCodeByClassID (classID , qrCode){
+async function createQrCodeByClassID (classID , qrCode, webLat, webLong){
   const newQrCode = {
     classID : classID,
-    qrCode : qrCode
+    qrCode : qrCode,
+    webLat : webLat,
+    webLong : webLong
   }
   await admin.firestore().collection('QrCodes').add(newQrCode)
     .then((doc) => {
@@ -180,10 +199,10 @@ exports.getAttendenceSuccessOrNot = functions.https.onCall(async (data, context)
   let studentID = "";
   let classID = "";
   let token = "";
-
+ 
   token = data.token;
 
-  classID = await getClassIDByToken(data.token)
+  classID = await getClassIDByToken(data.token,data.latitude,data.longitude)
     .then((result) => {
       console.log(result);
       return result;
@@ -194,18 +213,45 @@ exports.getAttendenceSuccessOrNot = functions.https.onCall(async (data, context)
     });
 
   studentID = await getStudentIDByEmail(data.email)
-  .then((result) => {
-    console.log(result);
-    return result;
-  })
-  .catch((error) => {
-    console.error(error);
-    throw new Error('An error occurred while retrieving the document.');
-  });
+    .then((result) => {
+      console.log(result);
+      return result;
+    })
+    .catch((error) => {
+      console.error(error);
+      throw new Error('An error occurred while retrieving the document.');
+    });
 
+  const docRef = admin.firestore().collection('Classes').doc(classID);
+  const document = await docRef.get();
+
+  let time = document.data().time;
+  const docRef2 = admin.firestore().collection('Courses').doc(document.data().courseID);
+  const document2 = await docRef2.get();
+
+  console.log("A talalt ora neve: " + document2.data().courseName);
+  console.log("A talalt ora ideje: " + time);
+// 
   let text = await createAttendenceByEmailAndToken(token, classID, studentID);
-  return text;
+
+  const attendenceInfo = {
+    courseName: document2.data().courseName,
+    time : time
+  }
+  return attendenceInfo;
 });
+
+function checkDistance(webLat,webLong,appLat,appLong){
+  let a = Math.abs(webLat - appLat);
+  let b = Math.abs(webLong - appLong);
+  a=a*1000;
+  b=b*1000;
+  // console.log("a: "+a+"b: "+b);
+  if ((a<2) && (b<2)){
+    return true;
+  }
+  return false;
+}
 
 async function getStudentIDByEmail(email){
   try{
@@ -223,19 +269,39 @@ async function getStudentIDByEmail(email){
   }
 }
 
-async function getClassIDByToken(token){
+async function getClassIDByToken(token,mobLat,mobLong){
   try{
     const doc = await admin.firestore().collection('QrCodes').get();
     let classID;
     doc.forEach(document => {
       if (document.data().qrCode == token) {
-        classID = document.data().classID;
-        console.log(document.id, '=>', document.data());
+        if (checkDistance(document.data().webLat,document.data().webLong,mobLat,mobLong)){
+          classID = document.data().classID;
+          console.log(document.id, '=>', document.data());
+        } 
       }
     });
     return classID;
   } catch(error){
     console.log(error);
+  }
+}
+
+async function studentHasAttendence(classID,studentID){
+    try {
+    const doc = await admin.firestore().collection('Attendence').get();
+    let has = "dontHaveAttendence";
+    doc.forEach(document => {
+      if ((document.data().studentID == studentID) && (document.data().classID == classID)) {
+        has = "hasAttendece";
+        
+      }
+    });
+    return has;
+  } catch (error) {
+    // Hiba kezelése
+    console.error(error);
+    throw new Error('An error occurred while retrieving the document.');
   }
 }
 
@@ -245,6 +311,40 @@ async function createAttendenceByEmailAndToken(token, classID, studentID){
     classID : classID,
     studentID : studentID
   }
+
+  let has = await studentHasAttendence(classID,studentID)
+  .then((result) => {
+    console.log(result);
+    return result;
+  })
+  .catch((error) => {
+    console.error(error);
+    throw new Error('An error occurred while retrieving the document.');
+  });
+  console.log("van jelenlet vagy nincs: " + has);
+
+  if (has == "hasAttendece"){
+    return "Has Attandence already";
+  }
+
+  await admin.firestore().runTransaction(async (req,res) => {
+  try {
+    const doc = await admin.firestore().collection('QrCodes').get();
+    let docID;
+    doc.forEach(document => {
+      if (document.data().qrCode == token) {
+        docID = document.id;
+        console.log(document.id, '=>', document.data());
+      }
+    });
+    console.log("most fogok torolni : "+docID);
+    const result = await admin.firestore().collection('QrCodes').doc(docID).delete();
+    console.log(result);
+    return result;
+  }catch (errror){
+    return errror.message;
+  }});
+
   await admin.firestore().collection('Attendence').add(newAttendence)
     .then((doc) => {
       return 'document' + doc.id +  'created successfully';
@@ -254,9 +354,6 @@ async function createAttendenceByEmailAndToken(token, classID, studentID){
       console.error(err);
     });
 }
-
-
-
 
 
 
